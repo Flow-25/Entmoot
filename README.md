@@ -60,6 +60,10 @@ There are no dependencies: plain Node (built-in `http`) and a vanilla JS fronten
 persisted to `data.json` next to the server. `PORT` and `DATA_FILE` can be overridden with
 environment variables.
 
+To publish the app under a sub-path (for example `example.org/entmoot`), set
+`BASE_PATH=/entmoot`. The server then answers only under that prefix, so the reverse proxy
+should forward the path unchanged (no prefix stripping).
+
 The page has two themes, *Fangorn by night* (dark) and *Derndingle by morning* (light). It
 follows the system preference, can be switched from the top bar, and can be forced with
 `?theme=light` / `?theme=dark`.

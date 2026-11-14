@@ -165,3 +165,36 @@ test('expired moots are purged', async () => {
   assert.equal(idle.id in data.moots, false);
   assert.equal(fresh.id in data.moots, true);
 });
+
+test('BASE_PATH serves the whole app under a sub-path', async () => {
+  const { spawn } = require('node:child_process');
+  const child = spawn(process.execPath, [path.join(__dirname, '..', 'server.js')], {
+    env: { ...process.env, PORT: '0', BASE_PATH: '/entmoot/', DATA_FILE: path.join(dir, 'sub.json') },
+    stdio: ['ignore', 'pipe', 'inherit'],
+  });
+  try {
+    const line = await new Promise(resolve => child.stdout.once('data', d => resolve(String(d))));
+    const origin = line.match(/http:\/\/localhost:\d+/)[0];
+    const get = url => fetch(origin + url);
+
+    const html = await (await get('/entmoot/m/abc')).text();
+    assert.match(html, /data-base="\/entmoot"/);
+    assert.match(html, /href="\/entmoot\/style\.css"/);
+    assert.equal((await get('/entmoot')).status, 200);
+    assert.match((await get('/entmoot/app.js')).headers.get('content-type'), /javascript/);
+    assert.equal((await get('/')).status, 404);
+    assert.equal((await get('/entmootx')).status, 404);
+    assert.equal((await get('/api/moots/x')).status, 404);
+
+    const res = await fetch(origin + '/entmoot/api/moots', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: 'q', options: ['a', 'b'], method: 'score' }),
+    });
+    assert.equal(res.status, 201);
+    const { id } = await res.json();
+    assert.equal((await (await get(`/entmoot/api/moots/${id}`)).json()).question, 'q');
+  } finally {
+    child.kill();
+  }
+});

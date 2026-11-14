@@ -4,6 +4,12 @@
 const app = document.getElementById('app');
 const POLL_MS = 4000;
 
+// The app may be served under a sub-path (BASE_PATH on the server, e.g. "/entmoot").
+// Inside the app, paths are always written without it; `url()` adds it back.
+const BASE = document.documentElement.dataset.base || '';
+const url = path => BASE + path;
+const appPath = () => (location.pathname.startsWith(BASE) ? location.pathname.slice(BASE.length) : location.pathname) || '/';
+
 const state = {
   id: null,
   token: null, // voter token for this moot
@@ -119,9 +125,9 @@ const themeLabel = () => (document.documentElement.dataset.theme === 'light' ? '
 
 const topbar = () => `
   <nav class="topbar">
-    <a class="brand" href="/" data-nav><span class="brand-leaf">❦</span> Entmoot</a>
+    <a class="brand" href="${url('/')}" data-nav><span class="brand-leaf">❦</span> Entmoot</a>
     <span class="topbar-tools">
-      <a class="ghost small button" href="/#guide" data-nav>What is this?</a>
+      <a class="ghost small button" href="${url('/#guide')}" data-nav>What is this?</a>
       <button class="ghost small" type="button" data-act="theme" aria-label="Switch between day and night">${themeLabel()}</button>
     </span>
   </nav>`;
@@ -135,7 +141,7 @@ async function api(method, path, body) {
   if (state.adminToken) headers['X-Admin-Token'] = state.adminToken;
   let res;
   try {
-    res = await fetch(`/api${path}`, { method, headers, body: body ? JSON.stringify(body) : undefined });
+    res = await fetch(url(`/api${path}`), { method, headers, body: body ? JSON.stringify(body) : undefined });
   } catch {
     throw new Error('The forest is silent — could not reach the server.');
   }
@@ -161,8 +167,8 @@ async function copyText(value) {
 
 // Screenshots come in a light and a dark variant; CSS shows the one matching the theme.
 const guideShot = (name, alt) => `
-  <img class="only-light" src="/img/guide-${name}.png" alt="${alt}" loading="lazy">
-  <img class="only-dark" src="/img/guide-${name}-dark.png" alt="${alt}" loading="lazy">`;
+  <img class="only-light" src="${url(`/img/guide-${name}.png`)}" alt="${alt}" loading="lazy">
+  <img class="only-dark" src="${url(`/img/guide-${name}-dark.png`)}" alt="${alt}" loading="lazy">`;
 
 const guideStep = (numeral, title, text, shots) => `
   <section class="guide-step">
@@ -641,7 +647,7 @@ const veilCard = () => `
 // ---- moot: page ------------------------------------------------------------
 
 function adminCard(moot) {
-  const origin = location.origin;
+  const origin = location.origin + BASE;
   const linkRow = (label, url, note) => `
     <div class="link-row">
       <span class="label">${label} <small>${note}</small></span>
@@ -756,7 +762,7 @@ function renderMissing(message) {
   <div class="page">
     ${topbar()}
     <header class="hero">${EMBLEM}<h1>Lost in the forest</h1><p class="tagline">${esc(message)}</p>
-      <p><a class="primary button" href="/" data-nav>Call a new moot</a></p></header>
+      <p><a class="primary button" href="${url('/')}" data-nav>Call a new moot</a></p></header>
     ${footer()}
   </div>`;
 }
@@ -847,7 +853,7 @@ function route() {
   stopPolling();
   Object.assign(state, { id: null, token: null, adminToken: null, moot: null, snapshot: '', draft: null, confirmClose: false });
   window.scrollTo(0, 0);
-  const m = location.pathname.match(/^\/m\/([\w-]+)(?:\/admin\/([\w-]+))?\/?$/);
+  const m = appPath().match(/^\/m\/([\w-]+)(?:\/admin\/([\w-]+))?\/?$/);
   if (!m) return renderHome();
 
   state.id = m[1];
@@ -863,11 +869,11 @@ function route() {
 
 function navigate(path) {
   // Opening the guide from the home page must not re-render (and wipe) the create form.
-  if (path === '/#guide' && location.pathname === '/') {
-    history.replaceState(null, '', path);
+  if (path === '/#guide' && appPath() === '/') {
+    history.replaceState(null, '', url(path));
     return openGuide();
   }
-  history.pushState(null, '', path);
+  history.pushState(null, '', url(path));
   route();
 }
 
@@ -875,7 +881,7 @@ document.addEventListener('click', e => {
   const link = e.target.closest('a[data-nav]');
   if (link && !e.metaKey && !e.ctrlKey && !e.shiftKey && e.button === 0) {
     e.preventDefault();
-    return navigate(link.getAttribute('href'));
+    return navigate(link.getAttribute('href').slice(BASE.length));
   }
   const el = e.target.closest('[data-act]');
   if (!el) return;
@@ -892,7 +898,7 @@ document.addEventListener('click', e => {
     }
     case 'guide-top':
       e.preventDefault();
-      history.replaceState(null, '', '/');
+      history.replaceState(null, '', url('/'));
       document.getElementById('create-form').scrollIntoView({ behavior: 'smooth' });
       return document.querySelector('#create-form [name=question]').focus({ preventScroll: true });
     case 'add-row':

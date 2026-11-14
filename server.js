@@ -10,6 +10,15 @@ const PORT = process.env.PORT || 3000;
 const PUBLIC = path.join(__dirname, 'public');
 const DATA_FILE = process.env.DATA_FILE || path.join(__dirname, 'data.json');
 const MAX_BODY = 256 * 1024;
+// Optional sub-path the app is published under, e.g. BASE_PATH=/entmoot for example.org/entmoot.
+// Requests must then start with it; everything else gets a 404.
+const BASE_PATH = normalizeBase(process.env.BASE_PATH);
+
+function normalizeBase(value) {
+  const base = `/${value || ''}`.replace(/\/+/g, '/').replace(/\/$/, '');
+  if (!/^(\/[\w.~-]+)*$/.test(base)) throw new Error(`Invalid BASE_PATH: ${value}`);
+  return base;
+}
 
 const METHODS = ['approval', 'ranked', 'score'];
 const SCORE_MAX = 5;
@@ -78,17 +87,22 @@ function readBody(req) {
   });
 }
 
-function serveStatic(req, res) {
+const INDEX = path.join(PUBLIC, 'index.html');
+// index.html is a template: {{BASE}} becomes the sub-path the app is served under.
+const renderIndex = () => fs.readFileSync(INDEX, 'utf8').replaceAll('{{BASE}}', BASE_PATH);
+
+function serveStatic(res, pathname) {
   let rel;
   try {
-    rel = decodeURIComponent(new URL(req.url, 'http://x').pathname);
+    rel = decodeURIComponent(pathname);
   } catch {
     rel = '/';
   }
   // SPA: anything that isn't a file falls back to index.html
-  let file = path.join(PUBLIC, path.normalize(rel));
-  if (!file.startsWith(PUBLIC + path.sep) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) {
-    file = path.join(PUBLIC, 'index.html');
+  const file = path.join(PUBLIC, path.normalize(rel));
+  if (file === INDEX || !file.startsWith(PUBLIC + path.sep) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) {
+    res.writeHead(200, { 'Content-Type': MIME['.html'], 'Cache-Control': 'no-cache' });
+    return res.end(renderIndex());
   }
   res.writeHead(200, { 'Content-Type': MIME[path.extname(file)] || 'application/octet-stream' });
   fs.createReadStream(file).pipe(res);
@@ -362,10 +376,14 @@ function purgeExpired(now = Date.now()) {
 }
 
 const server = http.createServer(async (req, res) => {
-  const { pathname } = new URL(req.url, 'http://x');
+  let { pathname } = new URL(req.url, 'http://x');
   try {
+    if (BASE_PATH) {
+      if (pathname !== BASE_PATH && !pathname.startsWith(BASE_PATH + '/')) return sendJson(res, 404, { error: 'not found' });
+      pathname = pathname.slice(BASE_PATH.length) || '/';
+    }
     if (pathname.startsWith('/api/')) await handleApi(req, res, pathname);
-    else serveStatic(req, res);
+    else serveStatic(res, pathname);
   } catch (err) {
     sendJson(res, err.status || 500, { error: err.status ? err.message : 'internal error' });
     if (!err.status) console.error(err);
@@ -375,7 +393,7 @@ const server = http.createServer(async (req, res) => {
 if (require.main === module) {
   purgeExpired();
   setInterval(purgeExpired, 60 * 60 * 1000).unref();
-  server.listen(PORT, () => console.log(`Entmoot listening on http://localhost:${PORT}`));
+  server.listen(PORT, () => console.log(`Entmoot listening on http://localhost:${server.address().port}${BASE_PATH}`));
 }
 
 module.exports = { server, readBody, save, newId, data, purgeExpired };
